@@ -12,18 +12,39 @@ from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse.linalg import svds
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
+import os
 
-articles_df = pd.read_csv('../files/shared_articles.csv')
-interactions_df = pd.read_csv('../files/users_interactions.csv')
+#path statement necessary to let the project work in different environments with respect to PyCharm
+here = os.path.dirname(os.path.abspath(__file__))
 
-users_interactions_count_df = interactions_df.groupby(['personId', 'contentId']).size().groupby('personId').size()
-print('# users: %d' % len(users_interactions_count_df))
-users_with_enough_interactions_df = users_interactions_count_df[users_interactions_count_df >= 3].reset_index()[['personId']]
-print('# users with at least 3 interactions: %d' % len(users_with_enough_interactions_df))
+#CSV files readings
+articles_df = pd.read_csv(os.path.join(here, '../files/shared_articles.csv'))
+interactions_df = pd.read_csv(os.path.join(here, '../files/users_interactions.csv'))
 
-items_ratings_count_df = interactions_df.groupby(['personId', 'contentId']).size().groupby('contentId').size()
-print('# items: %d' % len(items_ratings_count_df))
-items_enough_rated_df = items_ratings_count_df[items_ratings_count_df >= 2].reset_index()[['contentId']]
-print('# items rated at least 2 times: %d' % len(items_enough_rated_df))
+#we only consider articles that have not been deleted
+articles_df = articles_df[articles_df['eventType'] == 'CONTENT SHARED']
 
-users = np.zeros(len(users_with_enough_interactions_df))
+#DataFrame containing IDs of users that rated at least three different items
+user_interactions = interactions_df[['personId', 'contentId']].drop_duplicates().groupby(['personId'])['contentId'].count()
+user_interactions_df = pd.DataFrame({'personId':user_interactions.index, 'n_interactions':user_interactions.values})
+enough_user_interactions_df = user_interactions_df[user_interactions_df['n_interactions'] >= 3]
+users_enough_interactions = enough_user_interactions_df['personId'].to_numpy()
+
+
+#DataFrame containing IDs of items that have been rated at least by two different users
+items_rated = interactions_df[['personId', 'contentId']].drop_duplicates().groupby(['contentId'])['personId'].count()
+items_rated_df = pd.DataFrame({'contentId':items_rated.index, 'n_ratings':items_rated.values})
+enough_items_rated_df = items_rated_df[items_rated_df['n_ratings'] >= 2]
+items_enough_rated = enough_items_rated_df['contentId'].to_numpy()
+
+
+#users = np.zeros(len(users_with_enough_interactions_df))
+#personId = users_with_enough_interactions_df.index[0]
+#interactions = interactions_df[interactions_df['personId'] == personId]
+
+
+
+
+#print(users_with_enough_interactions_df.index[0])
+#print(users_with_enough_interactions_df.iloc[0])
+
