@@ -105,7 +105,7 @@ interactions_train_df, interactions_test_df = train_test_split(user_item_df,
                                                                test_size=0.20,
                                                                random_state=42)
 
-
+#I studied also here: https://medium.com/@m_n_malaeb/recall-and-precision-at-k-for-recommender-systems-618483226c54
 
 
 
