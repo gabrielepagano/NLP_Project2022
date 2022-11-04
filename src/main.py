@@ -1,5 +1,6 @@
+import pickle
 import string
-
+import openpyxl
 import numpy as np
 import scipy
 import pandas as pd
@@ -11,64 +12,49 @@ from nltk.corpus import stopwords
 from nltk import word_tokenize
 from nltk import FreqDist
 from scipy.sparse import csr_matrix
+from sklearn import metrics
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse.linalg import svds
+from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import MinMaxScaler
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import os
 
 
-def standardize_text(text):
-    # remove punctuation
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    # convert to lower case
-    text = text.lower()
-    return text
-
-
-def get_tokens(text, stop_words):
-    # get individual words
-    tokens = word_tokenize(text)
-    # remove stopwords
-    tokens = [t for t in tokens if not t in stop_words]
-    return tokens
-
-
-def itemCollaborativeFiltering(CNN_articles_df, BR_articles_df):
-    Labels = ['news', 'sport', 'politics', 'business', 'health']
-    Labels_BR = ['colunas', 'esporte', 'poder', 'mercado', 'equilibrioesaude']
-    stop_words = set(stopwords.words('english'))
-    # add some data specific useless words
-    stop_words.add('cnn')
-    stop_words.add('cnnpolitics')
-    stop_words.add('us')
-    # select only the rows and columns that we need to perform text categorization
-    CNN_articles_df = CNN_articles_df[['Category', 'Keywords']]
-    CNN_articles_df = CNN_articles_df[CNN_articles_df['Category'].isin(Labels)]
-    BR_articles_df = BR_articles_df[['category', 'text']]
-    BR_articles_df = BR_articles_df[BR_articles_df['category'].isin(Labels_BR)]
+def itemCollaborativeFiltering(articles_enough_df, user_item_df):
     # random 80%-20% into training and test set
-    CNN_train_df, CNN_test_df = train_test_split(CNN_articles_df,
-                                                 test_size=0.20,
-                                                 random_state=42)
-    BR_train_df, BR_test_df = train_test_split(BR_articles_df,
-                                               test_size=0.20,
-                                               random_state=42)
-    # frequency of the words in the document
-    tokens = defaultdict(list)
-    for index, row in CNN_articles_df.iterrows():
-        label = row['Category']
-        text = standardize_text(row['Keywords'])
-        doc_tokens = get_tokens(text, stop_words)
-        tokens[label].extend(doc_tokens)
-    for category_label, category_tokens in tokens.items():
-        print(category_label)
-        fd = FreqDist(category_tokens)
-        print(fd.most_common(20))
+    interactions_train_df, interactions_test_df = train_test_split(user_item_df,
+                                                                   stratify=user_item_df['personId'],
+                                                                   test_size=0.20,
+                                                                   random_state=42)
+    interactions_test_predictions_df = interactions_test_df.copy()
+    interactions_test_predictions_df.drop('Rate', inplace=True, axis=1)
+    stop_words_en = set(stopwords.words('english'))
+    stop_words_pt = set(stopwords.words('portuguese'))
+    stop_words_sp = set(stopwords.words('spanish'))
+    stop_words = stop_words_en.union(stop_words_sp, stop_words_pt)
+    # splitting between training and test data
+    data = []
+    content = []
+    articles_arr = articles_enough_df['contentId'].to_numpy()
+    for index, row in articles_enough_df.iterrows():
+        data.append(row['text'])
+        content.append(row['contentId'])
+    # object that turns text into vectors
+    vectorizer = TfidfVectorizer(stop_words=stop_words,
+                                 ngram_range=(1, 3),
+                                 analyzer='word')
+    # create doc-term matrix
+    dtm = vectorizer.fit_transform(data)
+    dtm = csr_matrix(dtm)
 
+    # series containing user IDs and their average ratings
+    averages_users = interactions_train_df.groupby('personId')['Rate'].mean()
+    users = list(user_item_df['personId'].unique())
+    items = list(articles_enough_df['contentId'].unique())
 
 
 def userItemRating(interactions_df, users_enough_interactions, items_enough_rated):
@@ -113,11 +99,7 @@ def userItemRating(interactions_df, users_enough_interactions, items_enough_rate
                 temp_index = temp_index + 1
     user_item_df = pd.DataFrame(temp_array, columns=['personId', 'contentId', 'Rate'])
 
-    # random 80%-20% into training and test set
-    interactions_train_df, interactions_test_df = train_test_split(user_item_df,
-                                                                   stratify=user_item_df['personId'],
-                                                                   test_size=0.20,
-                                                                   random_state=42)
+    return user_item_df
 
 
 def dataPreProcessing(articles_df, interactions_df):
@@ -135,8 +117,20 @@ def dataPreProcessing(articles_df, interactions_df):
     items_rated_df = pd.DataFrame({'contentId': items_rated.index, 'n_ratings': items_rated.values})
     enough_items_rated_df = items_rated_df[items_rated_df['n_ratings'] >= 2]
     items_enough_rated = enough_items_rated_df['contentId'].to_numpy()
+    articles_enough_df = pd.DataFrame()
+    text = []
+    lang = []
+    content = []
+    for index, row in articles_df.iterrows():
+        if row['contentId'] in items_enough_rated:
+            content.append(row['contentId'])
+            text.append(row['text'])
+            lang.append(row['lang'])
+    articles_enough_df['contentId'] = content
+    articles_enough_df['text'] = text
+    articles_enough_df['lang'] = lang
 
-    return users_enough_interactions, items_enough_rated
+    return articles_enough_df, users_enough_interactions, items_enough_rated
 
 
 def main():
@@ -146,12 +140,13 @@ def main():
     nltk.download('stopwords')
     # CSV files readings
     articles_df = pd.read_csv(os.path.join(here, '../files/shared_articles.csv'))
+    articles_df = articles_df[articles_df['eventType'] == 'CONTENT SHARED']
     interactions_df = pd.read_csv(os.path.join(here, '../files/users_interactions.csv'))
-    CNN_articles_df = pd.read_csv(os.path.join(here, '../files/CNN_articles.csv'))
-    BR_articles_df = pd.read_csv(os.path.join(here, '../files/brazilian_articles.csv'))
-    users_enough_interactions, items_enough_rated = dataPreProcessing(articles_df, interactions_df)
-    userItemRating(interactions_df, users_enough_interactions, items_enough_rated)
-    itemCollaborativeFiltering(CNN_articles_df, BR_articles_df)
+    articles_enough_df, users_enough_interactions, items_enough_rated = dataPreProcessing(articles_df,
+                                                                                          interactions_df)
+    user_item_df = userItemRating(interactions_df, users_enough_interactions,
+                                  items_enough_rated)
+    itemCollaborativeFiltering(articles_enough_df, user_item_df)
 
 
 if __name__ == '__main__':
