@@ -30,19 +30,20 @@ def itemCollaborativeFiltering(articles_enough_df, user_item_df):
                                                                    stratify=user_item_df['personId'],
                                                                    test_size=0.20,
                                                                    random_state=42)
-    interactions_test_predictions_df = interactions_test_df.copy()
-    interactions_test_predictions_df.drop('Rate', inplace=True, axis=1)
+    interactions_train_df = interactions_train_df.set_index('personId')
+    interactions_test_df = interactions_test_df.set_index('personId')
     stop_words_en = set(stopwords.words('english'))
     stop_words_pt = set(stopwords.words('portuguese'))
     stop_words_sp = set(stopwords.words('spanish'))
     stop_words = stop_words_en.union(stop_words_sp, stop_words_pt)
     # splitting between training and test data
     data = []
-    content = []
+    # let's order articles by their ID
+    articles_enough_df = articles_enough_df.sort_values(by=['contentId'])
+    # array containing articles ordered by their appearence in articles_df
     articles_arr = articles_enough_df['contentId'].to_numpy()
     for index, row in articles_enough_df.iterrows():
         data.append(row['text'])
-        content.append(row['contentId'])
     # object that turns text into vectors
     vectorizer = TfidfVectorizer(stop_words=stop_words,
                                  ngram_range=(1, 3),
@@ -50,11 +51,33 @@ def itemCollaborativeFiltering(articles_enough_df, user_item_df):
     # create doc-term matrix
     dtm = vectorizer.fit_transform(data)
     dtm = csr_matrix(dtm)
-
-    # series containing user IDs and their average ratings
-    averages_users = interactions_train_df.groupby('personId')['Rate'].mean()
-    users = list(user_item_df['personId'].unique())
-    items = list(articles_enough_df['contentId'].unique())
+    interactions_train_df = interactions_train_df.sort_values(by=['personId'])
+    interactions_test_df = interactions_test_df.sort_values(by=['personId'])
+    Rates = []
+    for i in range(len(interactions_test_df.index)):
+        user = interactions_test_df.index[i]
+        if user in interactions_train_df.index:
+            print(user)
+            print(interactions_test_df['contentId'].loc[user])
+            if len(interactions_test_df['contentId'].loc[user].items()) == 1:
+                print("mammt")
+                print(interactions_test_df['contentId'].loc[user].items())
+            for index, item in interactions_test_df['contentId'].loc[user].items():
+                test_ind = np.where(articles_arr == item)[0][0]
+                sum = 0
+                weighted_sum = 0
+                for indx, it in interactions_train_df['contentId'].loc[user].items():
+                    if it != item:
+                        train_ind = np.where(articles_arr == it)[0][0]
+                        weight = cosine_similarity(dtm[train_ind], dtm[test_ind])[0][0]
+                        rate = interactions_train_df[interactions_train_df['contentId'] == it]['Rate'].loc[user]
+                        weighted_sum = weighted_sum + rate * weight
+                        sum = sum + weight
+                Rates.append(round(weighted_sum/sum))
+                print(Rates)
+        else:
+            Rates.append(3)
+            print(Rates)
 
 
 def userItemRating(interactions_df, users_enough_interactions, items_enough_rated):
@@ -103,6 +126,7 @@ def userItemRating(interactions_df, users_enough_interactions, items_enough_rate
 
 
 def dataPreProcessing(articles_df, interactions_df):
+    articles_df = articles_df[articles_df['eventType'] == 'CONTENT SHARED']
     # array containing IDs of users that rated at least three different items
     user_interactions = interactions_df[['personId', 'contentId']].drop_duplicates().groupby(['personId'])[
         'contentId'].count()
@@ -140,7 +164,6 @@ def main():
     nltk.download('stopwords')
     # CSV files readings
     articles_df = pd.read_csv(os.path.join(here, '../files/shared_articles.csv'))
-    articles_df = articles_df[articles_df['eventType'] == 'CONTENT SHARED']
     interactions_df = pd.read_csv(os.path.join(here, '../files/users_interactions.csv'))
     articles_enough_df, users_enough_interactions, items_enough_rated = dataPreProcessing(articles_df,
                                                                                           interactions_df)
