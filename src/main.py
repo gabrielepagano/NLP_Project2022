@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import os
 
 
-def itemCollaborativeFiltering(articles_enough_df, user_item_df):
+def contentBasedFiltering(articles_enough_df, user_item_df):
     # random 80%-20% into training and test set
     interactions_train_df, interactions_test_df = train_test_split(user_item_df,
                                                                    stratify=user_item_df['personId'],
@@ -169,7 +169,7 @@ def main():
                                                                                           interactions_df)
     user_item_df = userItemRating(interactions_df, users_enough_interactions,
                                   items_enough_rated)
-    itemCollaborativeFiltering(articles_enough_df, user_item_df)
+    contentBasedFiltering(articles_enough_df, user_item_df)
 
 
 if __name__ == '__main__':
