@@ -47,7 +47,7 @@ def userItemRating(interactions_df, users_enough_interactions, items_enough_rate
                 temp_index = temp_index + 1
     user_item_df = pd.DataFrame(temp_array, columns=['personId', 'contentId', 'Rate'])
 
-    return user_item_df
+    return user_item_df, user_item_matrix
 
 
 def dataPreProcessing(articles_df, interactions_df):
@@ -59,13 +59,14 @@ def dataPreProcessing(articles_df, interactions_df):
         {'personId': user_interactions.index, 'n_interactions': user_interactions.values})
     enough_user_interactions_df = user_interactions_df[user_interactions_df['n_interactions'] >= 3]
     users_enough_interactions = enough_user_interactions_df['personId'].to_numpy()
-
+    users_enough_interactions = users_enough_interactions
     # array containing IDs of items that have been rated at least by two different users
     items_rated = interactions_df[['personId', 'contentId']].drop_duplicates().groupby(['contentId'])[
         'personId'].count()
     items_rated_df = pd.DataFrame({'contentId': items_rated.index, 'n_ratings': items_rated.values})
     enough_items_rated_df = items_rated_df[items_rated_df['n_ratings'] >= 2]
     items_enough_rated = enough_items_rated_df['contentId'].to_numpy()
+    items_enough_rated = items_enough_rated
     articles_enough_df = pd.DataFrame()
     text = []
     lang = []
@@ -92,9 +93,11 @@ def main():
     interactions_df = pd.read_csv(os.path.join(here, '../files/users_interactions.csv'))
     articles_df, articles_enough_df, users_enough_interactions, items_enough_rated = dataPreProcessing(articles_df,
                                                                                           interactions_df)
-    user_item_df = userItemRating(interactions_df, users_enough_interactions,
+    user_item_df, user_item_matrix = userItemRating(interactions_df, users_enough_interactions,
                                   items_enough_rated)
     itemCollaborativeFiltering(articles_enough_df, articles_df, user_item_df)
+
+    userCollaborativeFiltering(articles_df, user_item_df, interactions_df)
     # contentBasedFiltering(articles_enough_df, user_item_df)
 
     #Tasks 4 to 6
