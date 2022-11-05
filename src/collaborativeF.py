@@ -54,7 +54,6 @@ class ModelEvaluator:
         hit = int(index in range(0, topn))
         return hit, index
 
-
     def evaluate_model_for_user(self, model, person_id):
         # Getting the items in test set
         interacted_values_testset = self.interactions_test_indexed_df.loc[person_id]
@@ -105,7 +104,7 @@ class ModelEvaluator:
                           }
         return person_metrics
 
-    def evaluate_model(self, model):
+    def evaluate_model(self, model, items):
         # print('Running evaluation for users')
         people_metrics = []
         for idx, person_id in enumerate(list(self.interactions_test_indexed_df.index.unique().values)):
@@ -123,13 +122,12 @@ class ModelEvaluator:
             detailed_results_df['interacted_count'].sum())
         global_recall_at_10 = detailed_results_df['hits@10_count'].sum() / float(
             detailed_results_df['interacted_count'].sum())
-        list_relevant_items = self.item_popularity_df['contentId'].to_numpy()
 
         global_metrics = {'modelName': model.get_model_name(),
                           'recall@5': global_recall_at_5,
                           'recall@10': global_recall_at_10,
-                          'NDCG@5': ndcg_at_k(list_relevant_items, 5, 0),
-                          'NDCG@10': ndcg_at_k(list_relevant_items, 10, 0)}
+                          'NDCG@5': ndcg_at_k(items['Rate'].to_numpy(), 5, 0),
+                          'NDCG@10': ndcg_at_k(items['Rate'].to_numpy(), 10, 0)}
         return global_metrics, detailed_results_df
 
 
@@ -255,6 +253,9 @@ def get_items_interacted(person_id, interactions_df):
 
 
 def itemCollaborativeFiltering(articles_enough_df, articles_df, interactions_full_df):
+    #The User Sample's ID
+    user_id = -1479311724257856983
+
     interactions_train_df, interactions_test_df = train_test_split(interactions_full_df,
                                                                    stratify=interactions_full_df['personId'],
                                                                    test_size=0.20,
@@ -263,6 +264,10 @@ def itemCollaborativeFiltering(articles_enough_df, articles_df, interactions_ful
     interactions_full_indexed_df = interactions_full_df.set_index('personId')
     interactions_train_indexed_df = interactions_train_df.set_index('personId')
     interactions_test_indexed_df = interactions_test_df.set_index('personId')
+
+    items = inspect_interactions(articles_df, interactions_train_indexed_df, interactions_test_indexed_df,
+                                 user_id, test_set=False)
+
     item_popularity_df = interactions_full_indexed_df.groupby('contentId')['Rate'].sum().sort_values(
         ascending=False).reset_index()
     model_evaluator = ModelEvaluator(interactions_full_indexed_df, interactions_train_indexed_df,
@@ -271,14 +276,14 @@ def itemCollaborativeFiltering(articles_enough_df, articles_df, interactions_ful
     print(item_popularity_df.head(10))
     popularity_model = PopularityRecommender(interactions_test_indexed_df, item_popularity_df, articles_df)
     print('\nEvaluating Popularity recommendation model...\n')
-    pop_global_metrics, pop_detailed_results_df = model_evaluator.evaluate_model(popularity_model)
+    pop_global_metrics, pop_detailed_results_df = model_evaluator.evaluate_model(popularity_model, items)
     print('\nGlobal metrics:\n%s' % pop_global_metrics)
     print(pop_detailed_results_df.head(10))
 
     print(
         "\nFirst 20 relevant items for the user ID -1479311724257856983 \n(just a sample one, if you want to change user just call the function with an other ID): \n")
-    print(inspect_interactions(articles_df, interactions_train_indexed_df, interactions_test_indexed_df,
-                               -1479311724257856983, test_set=False).head(20))
+
+    print(items.head(20))
 
 
 def contentBasedFiltering(articles_enough_df, user_item_df):
