@@ -1,39 +1,184 @@
-from DataFrame import DataFrame
 from corrcoef import *
 from sentiment import *
+from comment_injector import *
+from tokenizor import *
+from collaborativeF import *
 
-if __name__ == "__main__" :
-    df = DataFrame('../files/shared_articles.csv', '../files/users_interactions.csv')
 
-    comments = ["I like it a lot. It was fun to read and very imformative!",
-            "I didn't love it, but it was still ok. I found the final part interesting.",
-            "It was rather dissapointing to say the least. It was repeating the same points over and over and had no information we didn't already know...",
-            "I loved this article! I learned so many new things from it. I hope the author releases more great work!",
-            "The article itself was fine, but I think the author should put more effort to not repeat imformation too much."]
+def userItemRating(interactions_df, users_enough_interactions, items_enough_rated):
+    user_item_matrix = np.zeros((len(items_enough_rated), len(users_enough_interactions)))
 
-    print("\n1st statement :")
-    sentiment_scores(comments[0])
- 
-    print("\n2nd Statement :")
-    sentiment_scores(comments[1])
- 
-    print("\n3rd Statement :")
-    sentiment_scores(comments[2])
+    # efficient version of the algorithm
+    for i in interactions_df.index:
+        if ((np.isin(interactions_df['personId'][i], users_enough_interactions)) and
+                (np.isin(interactions_df['contentId'][i], items_enough_rated))):
+            row_index = np.where(items_enough_rated == interactions_df['contentId'][i])[0][0]
+            col_index = np.where(users_enough_interactions == interactions_df['personId'][i])[0][0]
+            if interactions_df['eventType'][i] == "LIKE":
+                user_item_matrix[row_index][col_index] = 5
 
-    print("\n4rd Statement :")
-    sentiment_scores(comments[3])
+            elif interactions_df['eventType'][i] == "VIEW" and user_item_matrix[row_index][col_index] == 0:
+                user_item_matrix[row_index][col_index] = 1
 
-    print("\n5rd Statement :")
-    sentiment_scores(comments[4])
+            elif interactions_df['eventType'][i] == "COMMENT CREATED" and user_item_matrix[row_index][col_index] < 2:
+                user_item_matrix[row_index][col_index] = 2
 
-    print("\n\n\n")
+            elif ((interactions_df['eventType'][i] == "FOLLOW" or interactions_df['eventType'][i] == "BOOKMARK") and
+                  user_item_matrix[row_index][col_index] < 3):
 
-    pd_pearcorr_rating_sentiment(df.user_item_df)
+                user_item_matrix[row_index][col_index] = 3
 
-    print("\n\n\n")
+            elif ((interactions_df['eventType'][i] == "FOLLOW" or
+                   interactions_df['eventType'][i] == "BOOKMARK") and
+                  user_item_matrix[row_index][col_index] == 3):
 
-    np1 = [4, 1, 5, 2, 3, 3, 4]
-    np2 = [0.03, -0.1, 0.09, -0.06, 0.02, 0.03, 0.8]
+                user_item_matrix[row_index][col_index] = 4
 
-    np_pearcorr_rating_sentiment(np1, np2)
+    # creation of a dataframe containing only effective user-item interactions
+    temp_index = 0
+    nonzero_len = len(user_item_matrix[np.nonzero(user_item_matrix)])
+    temp_array = np.zeros((nonzero_len, 3))
+    for i in range(len(users_enough_interactions)):
+        for j in range(len(items_enough_rated)):
+            if user_item_matrix[j][i] != 0:
+                temp_array[temp_index][0] = users_enough_interactions[i]
+                temp_array[temp_index][1] = items_enough_rated[j]
+                temp_array[temp_index][2] = user_item_matrix[j][i]
+                temp_index = temp_index + 1
+    user_item_df = pd.DataFrame(temp_array, columns=['personId', 'contentId', 'Rate'])
 
+    return user_item_df
+
+
+def dataPreProcessing(articles_df, interactions_df):
+    articles_df = articles_df[articles_df['eventType'] == 'CONTENT SHARED']
+    # array containing IDs of users that rated at least three different items
+    user_interactions = interactions_df[['personId', 'contentId']].drop_duplicates().groupby(['personId'])[
+        'contentId'].count()
+    user_interactions_df = pd.DataFrame(
+        {'personId': user_interactions.index, 'n_interactions': user_interactions.values})
+    enough_user_interactions_df = user_interactions_df[user_interactions_df['n_interactions'] >= 3]
+    users_enough_interactions = enough_user_interactions_df['personId'].to_numpy()
+
+    # array containing IDs of items that have been rated at least by two different users
+    items_rated = interactions_df[['personId', 'contentId']].drop_duplicates().groupby(['contentId'])[
+        'personId'].count()
+    items_rated_df = pd.DataFrame({'contentId': items_rated.index, 'n_ratings': items_rated.values})
+    enough_items_rated_df = items_rated_df[items_rated_df['n_ratings'] >= 2]
+    items_enough_rated = enough_items_rated_df['contentId'].to_numpy()
+    articles_enough_df = pd.DataFrame()
+    text = []
+    lang = []
+    content = []
+    for index, row in articles_df.iterrows():
+        if row['contentId'] in items_enough_rated:
+            content.append(row['contentId'])
+            text.append(row['text'])
+            lang.append(row['lang'])
+    articles_enough_df['contentId'] = content
+    articles_enough_df['text'] = text
+    articles_enough_df['lang'] = lang
+
+    return articles_df, articles_enough_df, users_enough_interactions, items_enough_rated
+
+
+def main():
+    # path statement necessary to let the project work in different environments with respect to PyCharm
+    here = os.path.dirname(os.path.abspath(__file__))
+    nltk.download('punkt')
+    nltk.download('stopwords')
+    # CSV files readings
+    articles_df = pd.read_csv(os.path.join(here, '../files/shared_articles.csv'))
+    interactions_df = pd.read_csv(os.path.join(here, '../files/users_interactions.csv'))
+    articles_df, articles_enough_df, users_enough_interactions, items_enough_rated = dataPreProcessing(articles_df,
+                                                                                          interactions_df)
+    user_item_df = userItemRating(interactions_df, users_enough_interactions,
+                                  items_enough_rated)
+    itemCollaborativeFiltering(articles_enough_df, articles_df, user_item_df)
+    # contentBasedFiltering(articles_enough_df, user_item_df)
+
+    #Tasks 4 to 6
+
+    post_injection_df = []
+    if (os.path.exists(os.path.join(here, '../files/comments.csv'))):
+        post_injection_df = pd.read_csv(os.path.join(here, '../files/comments.csv'))
+    else:
+        post_injection_df = comments_injection(interactions_df, user_item_df, users_enough_interactions,
+                                               items_enough_rated)
+
+    print(post_injection_df)
+
+    # SENTIMENT SCORE GENERATION
+
+    sentiment_scores = []
+    for i in post_injection_df.index:
+        sentiment_scores.append([post_injection_df['personId'][i], post_injection_df['contentId'][i],
+                                 post_injection_df['generatedScore'][i],
+                                 sentiment_score(post_injection_df['comment'][i], False)])
+
+    # dataframe creation
+    sentiment_scores = np.array(sentiment_scores)
+
+    sentiment_scores_df = pd.DataFrame(
+        {'personId': sentiment_scores[:, 0], 'contentId': sentiment_scores[:, 1], 'baseScore': sentiment_scores[:, 2],
+         'score': sentiment_scores[:, 3]})
+
+    print("\n\nSENTIMENT SCORES:\n")
+    print(sentiment_scores_df)
+
+    pd_pearcorr(sentiment_scores_df[['baseScore', 'score']])
+
+    # COMMENT LENGTH SCORE GENERATION
+
+    comment_length_scores = []
+    for i in post_injection_df.index:
+        comment_length_scores.append([post_injection_df['personId'][i], post_injection_df['contentId'][i],
+                                      post_injection_df['generatedScore'][i],
+                                      tokenize_count(post_injection_df['comment'][i], True)])
+
+    # dataframe creation
+    comment_length_scores = np.array(comment_length_scores)
+
+    comment_length_scores_df = pd.DataFrame(
+        {'personId': comment_length_scores[:, 0], 'contentId': comment_length_scores[:, 1],
+         'baseScore': comment_length_scores[:, 2], 'score': comment_length_scores[:, 3]})
+
+    print("\n\nCOMMENT LENGTH SCORES:\n")
+    print(comment_length_scores_df)
+
+    pd_pearcorr(comment_length_scores_df[['baseScore', 'score']])
+
+    # STOPWORD PROPORTION SCORE GENERATION
+
+    stopword_scores = []
+    for i in post_injection_df.index:
+        stopword_scores.append([post_injection_df['personId'][i], post_injection_df['contentId'][i],
+                                post_injection_df['generatedScore'][i],
+                                tokenize_proportion(post_injection_df['comment'][i])])
+
+    # dataframe creation
+    stopword_scores = np.array(stopword_scores)
+
+    stopword_scores_df = pd.DataFrame(
+        {'personId': stopword_scores[:, 0], 'contentId': stopword_scores[:, 1], 'baseScore': stopword_scores[:, 2],
+         'score': stopword_scores[:, 3]})
+
+    print("\n\nSTOPWORD PROPORTION SCORES:\n")
+    print(stopword_scores_df)
+
+    pd_pearcorr(stopword_scores_df[['baseScore', 'score']])
+
+
+if __name__ == '__main__':
+    main()
+
+# I studied also here: https://medium.com/@m_n_malaeb/recall-and-precision-at-k-for-recommender-systems-618483226c54
+
+
+# users = np.zeros(len(users_with_enough_interactions_df))
+# personId = users_with_enough_interactions_df.index[0]
+# interactions = interactions_df[interactions_df['personId'] == personId]
+
+
+# print(users_with_enough_interactions_df.index[0])
+# print(users_with_enough_interactions_df.iloc[0])
