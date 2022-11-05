@@ -29,11 +29,13 @@ EVAL_RANDOM_SAMPLE_NON_INTERACTED_ITEMS = 100
 
 class ModelEvaluator:
 
-    def __init__(self, interactions_full_indexed_df, interactions_train_indexed_df, interactions_test_indexed_df, articles_df):
+    def __init__(self, interactions_full_indexed_df, interactions_train_indexed_df, interactions_test_indexed_df,
+                 articles_df, item_popularity_df):
         self.interactions_full_indexed_df = interactions_full_indexed_df
         self.interactions_train_indexed_df = interactions_train_indexed_df
         self.interactions_test_indexed_df = interactions_test_indexed_df
         self.articles_df = articles_df
+        self.item_popularity_df = item_popularity_df
 
     def get_not_interacted_items_sample(self, person_id, sample_size, seed=42):
         interacted_items = get_items_interacted(person_id, self.interactions_full_indexed_df)
@@ -98,7 +100,8 @@ class ModelEvaluator:
                           'hits@10_count': hits_at_10_count,
                           'interacted_count': interacted_items_count_testset,
                           'recall@5': recall_at_5,
-                          'recall@10': recall_at_10}
+                          'recall@10': recall_at_10
+                          }
         return person_metrics
 
     def evaluate_model(self, model):
@@ -119,14 +122,17 @@ class ModelEvaluator:
             detailed_results_df['interacted_count'].sum())
         global_recall_at_10 = detailed_results_df['hits@10_count'].sum() / float(
             detailed_results_df['interacted_count'].sum())
+        list_relevant_items = self.item_popularity_df['contentId'].to_numpy()
 
         global_metrics = {'modelName': model.get_model_name(),
                           'recall@5': global_recall_at_5,
-                          'recall@10': global_recall_at_10}
+                          'recall@10': global_recall_at_10,
+                          'NDCG@5': ndcg_at_k(list_relevant_items, 5, 0),
+                          'NDCG@10': ndcg_at_k(list_relevant_items, 10, 0)}
         return global_metrics, detailed_results_df
 
-class PopularityRecommender:
 
+class PopularityRecommender:
     MODEL_NAME = 'Popularity'
 
     def __init__(self, interactions_test_indexed_df, popularity_df, items_df=None):
@@ -155,17 +161,91 @@ class PopularityRecommender:
         return recommendations_df
 
 
-def inspect_interactions(articles_df, interactions_train_indexed_df, interactions_test_indexed_df, person_id, test_set=True):
+def dcg_at_k(r, k, method=0):
+    """Score is discounted cumulative gain (dcg)
+    Relevance is positive real values.  Can use binary
+    as the previous methods.
+    Example from
+    http://www.stanford.edu/class/cs276/handouts/EvaluationNew-handout-6-per.pdf
+    >>> r = [3, 2, 3, 0, 0, 1, 2, 2, 3, 0]
+    >>> dcg_at_k(r, 1)
+    3.0
+    >>> dcg_at_k(r, 1, method=1)
+    3.0
+    >>> dcg_at_k(r, 2)
+    5.0
+    >>> dcg_at_k(r, 2, method=1)
+    4.2618595071429155
+    >>> dcg_at_k(r, 10)
+    9.6051177391888114
+    >>> dcg_at_k(r, 11)
+    9.6051177391888114
+    Args:
+        r: Relevance scores (list or numpy) in rank order
+            (first element is the first item)
+        k: Number of results to consider
+        method: If 0 then weights are [1.0, 1.0, 0.6309, 0.5, 0.4307, ...]
+                If 1 then weights are [1.0, 0.6309, 0.5, 0.4307, ...]
+    Returns:
+        Discounted cumulative gain
+    """
+    r = np.asfarray(r)[:k]
+    if r.size:
+        if method == 0:
+            return r[0] + np.sum(r[1:] / np.log2(np.arange(2, r.size + 1)))
+        elif method == 1:
+            return np.sum(r / np.log2(np.arange(2, r.size + 2)))
+        else:
+            raise ValueError('method must be 0 or 1.')
+    return 0.
+
+
+def ndcg_at_k(r, k, method=0):
+    """Score is normalized discounted cumulative gain (ndcg)
+    Relevance is positive real values.  Can use binary
+    as the previous methods.
+    Example from
+    http://www.stanford.edu/class/cs276/handouts/EvaluationNew-handout-6-per.pdf
+    >>> r = [3, 2, 3, 0, 0, 1, 2, 2, 3, 0]
+    >>> ndcg_at_k(r, 1)
+    1.0
+    >>> r = [2, 1, 2, 0]
+    >>> ndcg_at_k(r, 4)
+    0.9203032077642922
+    >>> ndcg_at_k(r, 4, method=1)
+    0.96519546960144276
+    >>> ndcg_at_k([0], 1)
+    0.0
+    >>> ndcg_at_k([1], 2)
+    1.0
+    Args:
+        r: Relevance scores (list or numpy) in rank order
+            (first element is the first item)
+        k: Number of results to consider
+        method: If 0 then weights are [1.0, 1.0, 0.6309, 0.5, 0.4307, ...]
+                If 1 then weights are [1.0, 0.6309, 0.5, 0.4307, ...]
+    Returns:
+        Normalized discounted cumulative gain
+    """
+    dcg_max = dcg_at_k(sorted(r, reverse=True), k, method)
+    if not dcg_max:
+        return 0.
+    return dcg_at_k(r, k, method) / dcg_max
+
+
+def inspect_interactions(articles_df, interactions_train_indexed_df, interactions_test_indexed_df, person_id,
+                         test_set=True):
     if test_set:
         interactions_df = interactions_test_indexed_df
     else:
         interactions_df = interactions_train_indexed_df
-    return interactions_df.loc[person_id].merge(articles_df, how = 'left',
-                                                      left_on = 'contentId',
-                                                      right_on = 'contentId') \
-                          .sort_values('Rate', ascending = False)[['Rate',
-                                                                          'contentId',
-                                                                          'title', 'url', 'lang']]
+    return interactions_df.loc[person_id].merge(articles_df, how='left',
+                                                left_on='contentId',
+                                                right_on='contentId') \
+        .sort_values('Rate', ascending=False)[['Rate',
+                                               'contentId',
+                                               'title', 'url', 'lang']]
+
 
 def get_items_interacted(person_id, interactions_df):
     # Get the user's data and merge in the movie information.
@@ -182,20 +262,22 @@ def itemCollaborativeFiltering(articles_enough_df, articles_df, interactions_ful
     interactions_full_indexed_df = interactions_full_df.set_index('personId')
     interactions_train_indexed_df = interactions_train_df.set_index('personId')
     interactions_test_indexed_df = interactions_test_df.set_index('personId')
-    model_evaluator = ModelEvaluator(interactions_full_indexed_df, interactions_train_indexed_df, interactions_test_indexed_df, articles_df)
     item_popularity_df = interactions_full_indexed_df.groupby('contentId')['Rate'].sum().sort_values(
         ascending=False).reset_index()
+    model_evaluator = ModelEvaluator(interactions_full_indexed_df, interactions_train_indexed_df,
+                                     interactions_test_indexed_df, articles_df, item_popularity_df)
     print("\n Here there are the most ten relevant items basing on the sum of ratings:\n")
     print(item_popularity_df.head(10))
     popularity_model = PopularityRecommender(interactions_test_indexed_df, item_popularity_df, articles_df)
-    print('Evaluating Popularity recommendation model...')
+    print('\nEvaluating Popularity recommendation model...\n')
     pop_global_metrics, pop_detailed_results_df = model_evaluator.evaluate_model(popularity_model)
     print('\nGlobal metrics:\n%s' % pop_global_metrics)
     print(pop_detailed_results_df.head(10))
 
-    print("\nFirst 20 relevant items for the user ID -1479311724257856983 \n(just a sample one, if you want to change user just call the function with an other ID): \n")
-    print(inspect_interactions(articles_df, interactions_train_indexed_df, interactions_test_indexed_df, -1479311724257856983, test_set=False).head(20))
-
+    print(
+        "\nFirst 20 relevant items for the user ID -1479311724257856983 \n(just a sample one, if you want to change user just call the function with an other ID): \n")
+    print(inspect_interactions(articles_df, interactions_train_indexed_df, interactions_test_indexed_df,
+                               -1479311724257856983, test_set=False).head(20))
 
 
 def contentBasedFiltering(articles_enough_df, user_item_df):
