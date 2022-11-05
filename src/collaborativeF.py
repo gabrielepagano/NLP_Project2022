@@ -52,6 +52,7 @@ class ModelEvaluator:
         hit = int(index in range(0, topn))
         return hit, index
 
+
     def evaluate_model_for_user(self, model, person_id):
         # Getting the items in test set
         interacted_values_testset = self.interactions_test_indexed_df.loc[person_id]
