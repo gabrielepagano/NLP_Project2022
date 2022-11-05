@@ -2,7 +2,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
  
 # function to print sentiments
 # of the sentence.
-def sentiment_scores(sentence):
+def sentiment_score(sentence, p):
  
     # Create a SentimentIntensityAnalyzer object.
     sid_obj = SentimentIntensityAnalyzer()
@@ -12,22 +12,24 @@ def sentiment_scores(sentence):
     # which contains pos, neg, neu, and compound scores.
     sentiment_dict = sid_obj.polarity_scores(sentence)
      
-    print("Overall sentiment dictionary is : ", sentiment_dict)
-    print("sentence was rated as ", sentiment_dict['neg']*100, "% Negative")
-    print("sentence was rated as ", sentiment_dict['neu']*100, "% Neutral")
-    print("sentence was rated as ", sentiment_dict['pos']*100, "% Positive")
+    if p: print("Overall sentiment dictionary is : ", sentiment_dict)
+    if p: print("sentence was rated as ", sentiment_dict['neg']*100, "% Negative")
+    if p: print("sentence was rated as ", sentiment_dict['neu']*100, "% Neutral")
+    if p: print("sentence was rated as ", sentiment_dict['pos']*100, "% Positive")
  
-    print("Sentence Overall Rated As", end = " ")
+    if p: print("Sentence Overall Rated As", end = " ")
  
     # decide sentiment as positive, negative and neutral
-    if sentiment_dict['compound'] >= 0.05 :
-        print("Positive")
+    if sentiment_dict['compound'] >= 0.05:
+        if p: print("Positive")
  
-    elif sentiment_dict['compound'] <= - 0.05 :
-        print("Negative")
+    elif sentiment_dict['compound'] <= - 0.05:
+        if p: print("Negative")
  
-    else :
-        print("Neutral")
+    else:
+        if p: print("Neutral")
+
+    return sentiment_dict['compound'] * 50 + 50
 
 
 
