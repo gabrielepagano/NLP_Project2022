@@ -88,6 +88,9 @@ def dataPreProcessing(articles_df, interactions_df):
 
 
 def main():
+    # FOR DEBUG PURPOSES (cuts the data into smaller sets for faster debug computations)
+    DEBUG = 0.25
+
     # path statement necessary to let the project work in different environments with respect to PyCharm
     here = os.path.dirname(os.path.abspath(__file__))
     nltk.download('punkt')
@@ -95,6 +98,11 @@ def main():
     # CSV files readings
     articles_df = pd.read_csv(os.path.join(here, '../files/shared_articles.csv'))
     interactions_df = pd.read_csv(os.path.join(here, '../files/users_interactions.csv'))
+
+    if 0 < DEBUG < 1:
+        articles_df = articles_df.sample(frac=DEBUG)
+        interactions_df = interactions_df.sample(frac=DEBUG)
+
     articles_df, articles_enough_df, users_enough_interactions, items_enough_rated = dataPreProcessing(articles_df,
                                                                                           interactions_df)
     user_item_df, user_item_matrix = userItemRating(interactions_df, users_enough_interactions,
