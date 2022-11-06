@@ -3,6 +3,7 @@ from sentiment import *
 from comment_injector import *
 from tokenizor import *
 from collaborativeF import *
+from contentF import *
 
 
 def userItemRating(interactions_df, users_enough_interactions, items_enough_rated):
@@ -71,14 +72,17 @@ def dataPreProcessing(articles_df, interactions_df):
     text = []
     lang = []
     content = []
+    title = []
     for index, row in articles_df.iterrows():
         if row['contentId'] in items_enough_rated:
             content.append(row['contentId'])
             text.append(row['text'])
             lang.append(row['lang'])
+            title.append(row['title'])
     articles_enough_df['contentId'] = content
     articles_enough_df['text'] = text
     articles_enough_df['lang'] = lang
+    articles_enough_df['title'] = title
 
     return articles_df, articles_enough_df, users_enough_interactions, items_enough_rated
 
@@ -98,7 +102,6 @@ def main():
     itemCollaborativeFiltering(articles_enough_df, articles_df, user_item_df)
 
     userCollaborativeFiltering(articles_df, user_item_df, interactions_df)
-    # contentBasedFiltering(articles_enough_df, user_item_df)
 
     #Tasks 4 to 6
 
@@ -170,6 +173,8 @@ def main():
     print(stopword_scores_df)
 
     pd_pearcorr(stopword_scores_df[['baseScore', 'score']])
+
+    contentBasedFiltering(articles_enough_df, user_item_df)
 
 
 if __name__ == '__main__':

@@ -134,6 +134,7 @@ class ModelEvaluator:
 
 
 class PopularityRecommender:
+
     MODEL_NAME = 'Popularity'
 
     def __init__(self, interactions_test_indexed_df, popularity_df, items_df=None):
