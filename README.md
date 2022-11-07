@@ -35,6 +35,7 @@ Here there is a list of the Python libraries that should be installed in order t
 - __pandas:__ used to deal with dataframes
 - __sklearn:__ provided us various utilities to deal with evaluation of recommender system
 - __nltk:__ provided us stopwords in different languages and tokenization utilities
+- __scipy:__ provided us the method to perform cosine similarity
 - __vaderSentiment:__ used to perform sentiment analysis
 
 
