@@ -5,17 +5,41 @@ import random
 # Top-N accuracy metrics consts
 EVAL_RANDOM_SAMPLE_NON_INTERACTED_ITEMS = 100
 
+
 class ModelEvaluator:
 
     def __init__(self, interactions_full_indexed_df, interactions_train_indexed_df, interactions_test_indexed_df,
-                 articles_df, item_popularity_df):
+                 articles_df, rec_items_df):
+        """
+            This class is a filtering model evaluator, and it performs RECALL and NDCG Evaluations.
+
+            Args:
+                interactions_full_indexed_df: an indexed (on personId) dataframe of all user interactions
+                interactions_train_indexed_df: the train sub-set of interactions_full_indexed_df
+                interactions_test_indexed_df: the test sub-set of interactions_full_indexed_df
+                articles_df: a complete dataframe of the articles
+                rec_items_df: a dataframe of potential item recommendations
+        """
+
         self.interactions_full_indexed_df = interactions_full_indexed_df
         self.interactions_train_indexed_df = interactions_train_indexed_df
         self.interactions_test_indexed_df = interactions_test_indexed_df
         self.articles_df = articles_df
-        self.item_popularity_df = item_popularity_df
+        self.item_popularity_df = rec_items_df
 
     def get_not_interacted_items_sample(self, person_id, sample_size, seed=42):
+        """
+            Identifies the items the provided user has not interacted with yet
+
+            Args:
+               person_id: the user's id
+               sample_size: the size of the sample
+               seed: default at 42
+
+            Returns:
+                set: the set of not interacted items for the provided user
+        """
+
         interacted_items = get_items_interacted(person_id, self.interactions_full_indexed_df)
         all_items = set(self.articles_df['contentId'])
         non_interacted_items = all_items - interacted_items
@@ -25,6 +49,17 @@ class ModelEvaluator:
         return set(non_interacted_items_sample)
 
     def _verify_hit_top_n(self, item_id, recommended_items, topn):
+        """
+            Args:
+                item_id: the article id
+                recommended_items: the list of recommended items
+                topn: a mex value number
+
+            Returns:
+                hit: the hit
+                index: the index of hit
+        """
+
         try:
             index = next(i for i, c in enumerate(recommended_items) if c == item_id)
         except:
@@ -33,6 +68,17 @@ class ModelEvaluator:
         return hit, index
 
     def evaluate_model_for_user(self, model, person_id):
+        """
+            Evaluates a model for a single provided user
+
+            Args:
+                model: the evaluated model
+                person_id: the user's id
+
+            Returns:
+                person_metrics: the evaluation metrics for the provided user
+        """
+
         # Getting the items in test set
         interacted_values_testset = self.interactions_test_indexed_df.loc[person_id]
         if type(interacted_values_testset['contentId']) == pd.Series:
@@ -54,13 +100,15 @@ class ModelEvaluator:
             # Getting a random sample (100) items the user has not interacted
             # (to represent items that are assumed to be no relevant to the user)
             non_interacted_items_sample = self.get_not_interacted_items_sample(person_id,
-                                                                               sample_size=EVAL_RANDOM_SAMPLE_NON_INTERACTED_ITEMS,
+                                                                               sample_size=
+                                                                               EVAL_RANDOM_SAMPLE_NON_INTERACTED_ITEMS,
                                                                                seed=item_id % (2 ** 32))
 
             # Combining the current interacted item with the 100 random items
             items_to_filter_recs = non_interacted_items_sample.union(set([item_id]))
 
-            # Filtering only recommendations that are either the interacted item or from a random sample of 100 non-interacted items
+            # Filtering only recommendations that are either the interacted item or from a random sample of 100
+            # non-interacted items
             valid_recs_df = person_recs_df[person_recs_df['contentId'].isin(items_to_filter_recs)]
             valid_recs = valid_recs_df['contentId'].values
             # Verifying if the current interacted item is among the Top-N recommended items
@@ -83,14 +131,24 @@ class ModelEvaluator:
         return person_metrics
 
     def evaluate_model(self, model, items):
-        # print('Running evaluation for users')
+        """
+            Evaluates a model for a single provided user
+
+            Args:
+                model: the evaluated model
+                items: a global articles rating if needed by the evaluated model
+
+            Returns:
+                global_metrics: the global metrics
+                detailed_results_df: the detailed results dataframe
+        """
+
         people_metrics = []
         for idx, person_id in enumerate(list(self.interactions_test_indexed_df.index.unique().values)):
-            # if idx % 100 == 0 and idx > 0:
-            #    print('%d users processed' % idx)
             person_metrics = self.evaluate_model_for_user(model, person_id)
             person_metrics['_person_id'] = person_id
             people_metrics.append(person_metrics)
+
         print('%d users processed' % idx)
 
         detailed_results_df = pd.DataFrame(people_metrics) \
@@ -101,16 +159,20 @@ class ModelEvaluator:
         global_recall_at_10 = detailed_results_df['hits@10_count'].sum() / float(
             detailed_results_df['interacted_count'].sum())
 
+        global_ndcg_at_5 = ndcg_at_k(items['Rate'].to_numpy(), 5, 0)
+        global_ndcg_at_10 = ndcg_at_k(items['Rate'].to_numpy(), 10, 0)
+
         global_metrics = {'modelName': model.get_model_name(),
                           'recall@5': global_recall_at_5,
                           'recall@10': global_recall_at_10,
-                          'NDCG@5': ndcg_at_k(items['Rate'].to_numpy(), 5, 0),
-                          'NDCG@10': ndcg_at_k(items['Rate'].to_numpy(), 10, 0)}
-        return global_metrics, detailed_results_df
+                          'ndcg@5': global_ndcg_at_5,
+                          'ndcg@10': global_ndcg_at_10}
+        return global_metrics, detailed_results_df.drop(['hits@5_count'], axis=1).drop(['hits@10_count'], axis=1)
 
 
 def dcg_at_k(r, k, method=0):
-    """Score is discounted cumulative gain (dcg)
+    """
+    Score is discounted cumulative gain (dcg)
     Relevance is positive real values.  Can use binary
     as the previous methods.
     Example from
@@ -149,7 +211,8 @@ def dcg_at_k(r, k, method=0):
 
 
 def ndcg_at_k(r, k, method=0):
-    """Score is normalized discounted cumulative gain (ndcg)
+    """
+    Score is normalized discounted cumulative gain (ndcg)
     Relevance is positive real values.  Can use binary
     as the previous methods.
     Example from
@@ -182,6 +245,16 @@ def ndcg_at_k(r, k, method=0):
 
 
 def get_items_interacted(person_id, interactions_df):
+    """
+    Args:
+        person_id: the user's id
+        interactions_df: a complete dataframe of user interactions
+
+    Returns:
+        set: a set of interacted items for the user
+    """
+
     # Get the user's data and merge in the movie information.
     interacted_items = interactions_df.loc[person_id]['contentId']
+
     return set(interacted_items if type(interacted_items) == pd.Series else [interacted_items])

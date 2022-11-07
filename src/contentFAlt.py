@@ -1,10 +1,8 @@
-import numpy as np
-import pandas as pd
-from sklearn.model_selection import train_test_split
+from scipy import spatial
 
 from sentiment import *
-import modelEvaluator
-from sklearn.metrics import mean_squared_error
+from tokenizor import *
+from collaborativeF import *
 
 
 class ContentBasedRecommender:
@@ -14,7 +12,7 @@ class ContentBasedRecommender:
                  items_df=None):
         """
             This class is a Content Recommendation Model. It recommends based on a user's previous choices. The
-            recommendation is aided by a sentiment analysis on each item / article
+            recommendation is aided by a sentiment analysis on each item / article but also text computations
 
             Args:
                 item_ids: item indexing list
@@ -38,11 +36,12 @@ class ContentBasedRecommender:
             Returns:
                 model_name: the name of the model
         """
+
         return self.MODEL_NAME
 
     def _get_similar_items_to_user_profile(self, person_id):
         """
-            Retrieves all similar items to the user's profile score, based on the sentiment analysis
+            Retrieves all similar items to the user's profile score, based on the sentiment and text analysis
 
             Args:
                 person_id: the user's id
@@ -53,17 +52,18 @@ class ContentBasedRecommender:
 
         ind = np.where(self.user_ids == person_id)[0]
         myprofile = self.user_profiles[ind]
-        differences = []
+        cosine_similarities = []
         for item in self.item_ids:
             if item not in self.interactions_full_indexed_df.loc[person_id]:
-                mse = mean_squared_error(self.articles_scores_df['Rate'][self.articles_scores_df['contentId'] == item],
-                                         myprofile)
-                differences.append(mse)
+                it = self.articles_scores_df['Rate'][self.articles_scores_df['contentId'] == item].tolist()[0]
+                for mp in myprofile[0]:
+                    cos = 1 - spatial.distance.cosine(mp, it)
+                #cos = cosine_similarity([self.articles_scores_df['Rate'][self.articles_scores_df['contentId'] == item][0]], myprofile[0])[0][0]
+                cosine_similarities.append(cos)
         recommended_items = pd.DataFrame()
         recommended_items['contentId'] = self.item_ids
-        recommended_items['Rate'] = differences
-        recommended_items = recommended_items.sort_values(by='Rate')
-
+        recommended_items['Rate'] = cosine_similarities
+        recommended_items = recommended_items.sort_values(by='Rate', ascending=False)
         return recommended_items
 
     def recommend_items(self, user_id, items_to_ignore=None, topn=10, verbose=False):
@@ -79,7 +79,6 @@ class ContentBasedRecommender:
 
         if items_to_ignore is None:
             items_to_ignore = []
-
         similar_items = self._get_similar_items_to_user_profile(user_id)
         # Ignores items the user has already interacted
 
@@ -135,17 +134,31 @@ def build_users_profile(person_id, interactions_indexed_df, item_ids, articles_s
         Returns:
             user_item_strengths_weighted_avg: the user's sentiment profile
     """
+
     interactions_person_df = interactions_indexed_df.loc[person_id]
+
     try:
         user_item_profiles = get_item_profiles(interactions_person_df['contentId'].to_numpy(), item_ids,
                                                articles_score_df)
     except AttributeError:
         user_item_profiles = get_item_profiles(np.array([interactions_person_df['contentId']]), item_ids,
                                                articles_score_df)
+
     user_item_strengths = np.array(interactions_person_df['Rate']).reshape(-1, 1)
     # Weighted average of item profiles by the interactions strength
-    user_item_strengths_weighted_avg = np.sum(np.multiply(user_item_profiles, user_item_strengths), axis=0) / np.sum(
-        user_item_strengths)
+    mul = [[a * b for x in user_item_profiles for a in x] for b in user_item_strengths]
+
+    user_item_strengths_weighted_avg = [0, 0, 0, 0, 0]
+    for a in mul:
+        for b in a:
+            i = 0
+            for x in b:
+                user_item_strengths_weighted_avg[i] += b
+                i += 1
+
+    for a in user_item_strengths_weighted_avg:
+        a /= np.sum(user_item_strengths)
+
 
     return user_item_strengths_weighted_avg
 
@@ -164,18 +177,16 @@ def build_users_profiles(interactions_train_df, articles_enough_df, item_ids, ar
 
     interactions_indexed_df = interactions_train_df[interactions_train_df['contentId']
                                                     .isin(articles_enough_df['contentId'])].set_index('personId')
-
     user_profiles = []
     for person_id in interactions_indexed_df.index.unique():
         user_profiles.append(build_users_profile(person_id, interactions_indexed_df, item_ids, articles_score_df))
-    print(user_profiles)
     return user_profiles, interactions_indexed_df.index.unique()
 
 
-def content_based_filtering(articles_enough_df, interactions_full_df):
+def content_based_filtering_alt(articles_enough_df, interactions_full_df):
     """
         Performs sentiment-based content filtering. This model depends on item profiles created by performing vader
-        sentiment analysis on the article title and content.
+        sentiment analysis and general text computations on the article title and content.
 
         Args:
             articles_enough_df: a list of articles that have at least two (2) different users interacting with them
@@ -188,7 +199,7 @@ def content_based_filtering(articles_enough_df, interactions_full_df):
     # The User Sample ID
     user_id = -1479311724257856983
 
-    print('\nPreparing data for Vader Content-Based Filtering model...\n')
+    print('\nPreparing data for Vector Content-Based Filtering model...\n')
 
     interactions_train_df, interactions_test_df = train_test_split(interactions_full_df,
                                                                    stratify=interactions_full_df['personId'],
@@ -205,7 +216,11 @@ def content_based_filtering(articles_enough_df, interactions_full_df):
     for index, row in articles_enough_df.iterrows():
         content = row['title'] + "" + row['text']
         title_text.append(content)
-        scores.append(sentiment_score(content, False))
+        neg, neu, pos = sentiment_scores(content, False)
+        ln = tokenize_count(content, True)
+        r = tokenize_proportion(content)
+        prons = tokenize_count_pronouns(content)
+        scores.append([pos, neg, ln, r, prons])
     articles_scores_df = pd.DataFrame()
     articles_scores_df['contentId'] = item_ids
     articles_scores_df['title_text'] = title_text
@@ -236,7 +251,7 @@ def content_based_filtering(articles_enough_df, interactions_full_df):
 
     print(recommendations_df)
 
-    print('\nEvaluating Content-Based Filtering model...\n')
+    print('Evaluating Content-Based Filtering model...')
 
     model_evaluator = modelEvaluator.ModelEvaluator(interactions_full_indexed_df, interactions_train_indexed_df,
                                                     interactions_test_indexed_df, articles_enough_df,

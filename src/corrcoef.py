@@ -1,16 +1,18 @@
-import numpy as np
-import pandas as pd
+def pd_pear_corr(df, p):
+    """
+        Calculates the Pearson Correlation between columns of the provided dataframe
 
+        Args:
+            df: the dataframe for the Pearson Correlation calculation
+            p: boolean, if True it prints results
 
-def pd_pearcorr(df):
+        Returns:
+            correlation: the correlation df
+    """
     correlation = df.corr()
 
-    print("\nThis is corr :\n")
-    print(correlation)
+    if p:
+        print("\nThis is corr :\n")
+        print(correlation)
 
-
-def np_pearcorr(np1, np2):
-    corr = np.corrcoef(np1, np2)
-
-    print("\nThis is corr :\n")
-    print(corr)
+    return correlation

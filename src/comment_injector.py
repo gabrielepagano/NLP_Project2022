@@ -5,72 +5,118 @@ import csv
 import os
 
 
-
 def comments_injection(interactions_df, user_item_df, users_enough_interactions, items_enough_rated):
+    """
+        The comments_injector is a special method that uses comments from a different dataframe and "injects" them to
+        the provided  (original) dataframe. It will also create a .csv file to save the results of the injection.
+        The injection is performed at random for 10% of the dataframe and based on score-mapping for the rest 90%
+
+        Args:
+            interactions_df: a complete dataframe of all user interactions with the articles
+            user_item_df: a complete dataframe of the item ratings
+            users_enough_interactions: a list of users that have interacted with at minimum three (3) different articles
+            items_enough_rated: a list of articles that have had at minimum two (2) users interacting with them
+
+        Returns:
+            post_injection_df: the dataframe post injection
+    """
+
     # path statement necessary to let the project work in different environments with respect to PyCharm
     here = os.path.dirname(os.path.abspath(__file__))
-    #CSV files readings
+    # CSV files readings
     hotel_reviews_df = pd.read_csv(os.path.join(here, '../files/Hotel_Reviews.csv'))
-
 
     post_injection_df = []
     track = 0
-    interactions_comments_df = interactions_df.loc[(interactions_df['eventType'] == "COMMENT CREATED"), ['personId', 'contentId']]
+    interactions_comments_df = interactions_df.loc[
+        (interactions_df['eventType'] == "COMMENT CREATED"), ['personId', 'contentId']]
     interactions_comments_df = interactions_comments_df.reset_index(drop=True)
     print(interactions_comments_df)
     for j in hotel_reviews_df.index:
-        if(track >= len(interactions_comments_df['personId'])): break
+        if track >= len(interactions_comments_df['personId']): break
         for i in interactions_comments_df.index:
-            #index bound extra check
+            # index bound extra check
             if i + track >= len(interactions_comments_df['personId']): break
 
-            if ((np.isin(interactions_comments_df['personId'].iloc[i+track], users_enough_interactions)) and
-                    (np.isin(interactions_comments_df['contentId'][i+track], items_enough_rated))):
-                #retrieving the correct generated score from user_item_df
-                rate = int(user_item_df.loc[(user_item_df['personId'] == interactions_comments_df['personId'][i+track]) & (user_item_df['contentId'] == interactions_comments_df['contentId'][i+track])]['Rate'])
-                #10% of comments will be randomly assigned
-                if(rand.randrange(0, 100) < 10):
-                    #both positive and negative comments are added on the randomised assignment
-                    post_injection_df.append([interactions_comments_df['personId'][i+track], interactions_comments_df['contentId'][i+track], hotel_reviews_df['Reviewer_Score'].get(j), rate, hotel_reviews_df['Positive_Review'][j] + "\n" + hotel_reviews_df['Negative_Review'][j]])
+            if ((np.isin(interactions_comments_df['personId'].iloc[i + track], users_enough_interactions)) and
+                    (np.isin(interactions_comments_df['contentId'][i + track], items_enough_rated))):
+
+                # retrieving the correct generated score from user_item_df
+                rate = int(user_item_df.loc[
+                               (user_item_df['personId'] == interactions_comments_df['personId'][i + track]) & (
+                                           user_item_df['contentId'] == interactions_comments_df['contentId'][
+                                       i + track])]['Rate'])
+
+                # 10% of comments will be randomly assigned
+                if rand.randrange(0, 100) < 10:
+
+                    # both positive and negative comments are added on the randomised assignment
+                    post_injection_df.append([interactions_comments_df['personId'][i + track],
+                                              interactions_comments_df['contentId'][i + track],
+                                              hotel_reviews_df['Reviewer_Score'].get(j), rate,
+                                              hotel_reviews_df['Positive_Review'][j] + "\n" +
+                                              hotel_reviews_df['Negative_Review'][j]])
                     break
-                #mapping hotel review scores to user item generated scores as follows:
-                #[7-10] -> 5, [4-7) -> 3 or 4, [0,4) -> 1 or 2
-                elif ((float(hotel_reviews_df['Reviewer_Score'].get(j)) >= 7) and 
-                    (float(hotel_reviews_df['Reviewer_Score'].get(j)) <= 10) and
-                    (rate == 5)):
-                    #positive comment gets added
-                    post_injection_df.append([interactions_comments_df['personId'][i+track], interactions_comments_df['contentId'][i+track], hotel_reviews_df['Reviewer_Score'].get(j), rate, hotel_reviews_df['Positive_Review'][j]])
+
+                # mapping hotel review scores to user item generated scores as follows:
+                # [7-10] -> 5, [4-7) -> 3 or 4, [0,4) -> 1 or 2
+                elif ((float(hotel_reviews_df['Reviewer_Score'].get(j)) >= 7) and
+                      (float(hotel_reviews_df['Reviewer_Score'].get(j)) <= 10) and
+                      (rate == 5)):
+                    # positive comment gets added
+                    post_injection_df.append([interactions_comments_df['personId'][i + track],
+                                              interactions_comments_df['contentId'][i + track],
+                                              hotel_reviews_df['Reviewer_Score'].get(j), rate,
+                                              hotel_reviews_df['Positive_Review'][j]])
                     break
+
                 elif ((float(hotel_reviews_df['Reviewer_Score'].get(j)) >= 4) and
-                        (float(hotel_reviews_df['Reviewer_Score'].get(j)) < 7) and
-                        (rate == 3 or rate == 4)):
-                    #both positive and negative comments are added
-                    post_injection_df.append([interactions_comments_df['personId'][i+track], interactions_comments_df['contentId'][i+track], hotel_reviews_df['Reviewer_Score'].get(j), rate, hotel_reviews_df['Positive_Review'][j] + "\n" + hotel_reviews_df['Negative_Review'][j]])
+                      (float(hotel_reviews_df['Reviewer_Score'].get(j)) < 7) and
+                      (rate == 3 or rate == 4)):
+                    # both positive and negative comments are added
+                    post_injection_df.append([interactions_comments_df['personId'][i + track],
+                                              interactions_comments_df['contentId'][i + track],
+                                              hotel_reviews_df['Reviewer_Score'].get(j), rate,
+                                              hotel_reviews_df['Positive_Review'][j] + "\n" +
+                                              hotel_reviews_df['Negative_Review'][j]])
                     break
+
                 elif ((float(hotel_reviews_df['Reviewer_Score'].get(j)) >= 0) and
-                        (float(hotel_reviews_df['Reviewer_Score'].get(j)) < 4) and
-                        (rate == 1 or rate == 2)):
-                    #only negative comment is added
-                    post_injection_df.append([interactions_comments_df['personId'][i+track], interactions_comments_df['contentId'][i+track], hotel_reviews_df['Reviewer_Score'].get(j), rate, hotel_reviews_df['Negative_Review'][j]])
+                      (float(hotel_reviews_df['Reviewer_Score'].get(j)) < 4) and
+                      (rate == 1 or rate == 2)):
+                    # only negative comment is added
+                    post_injection_df.append([interactions_comments_df['personId'][i + track],
+                                              interactions_comments_df['contentId'][i + track],
+                                              hotel_reviews_df['Reviewer_Score'].get(j), rate,
+                                              hotel_reviews_df['Negative_Review'][j]])
                     break
         track += 1
     post_injection_df = np.array(post_injection_df)
 
-    #dataframe creation
+    # dataframe creation
     post_injection_df = pd.DataFrame(
-        {'personId': post_injection_df[:, 0], 'contentId': post_injection_df[:, 1], 'userReview':post_injection_df[:, 2], 'generatedScore':post_injection_df[:, 3], 'comment': post_injection_df[:, 4]})
-    
-    #print df and csv file creation
-    print(post_injection_df)
-    create_csv(post_injection_df, here)
+        {'personId': post_injection_df[:, 0], 'contentId': post_injection_df[:, 1],
+         'userReview': post_injection_df[:, 2], 'generatedScore': post_injection_df[:, 3],
+         'comment': post_injection_df[:, 4]})
 
-    #returns the created df
+    # print df and csv file creation
+    print(post_injection_df)
+    create_csv(post_injection_df, ['personId', 'contentId', 'userReview', 'generatedScore', 'comment'], here)
+
+    # returns the created df
     return post_injection_df
 
-#a simple csv file creator function
-def create_csv(post_injection_df, here):
 
-    header = ['personId', 'contentId', 'userReview', 'generatedScore', 'comment']
+# a simple csv file creator function
+def create_csv(post_injection_df, header, here):
+    """
+        Saves the provided dataframe into an .csv file in the specified directory
+
+        Args:
+            post_injection_df: the dataframe to save as .csv
+            header: the header of the dataframe / .csv file
+            here: the parent path
+    """
 
     with open(os.path.join(here, '../files/comments.csv'), 'w', encoding='UTF8', newline='') as f:
         writer = csv.writer(f)
