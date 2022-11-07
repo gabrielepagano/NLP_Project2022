@@ -19,6 +19,7 @@
 | `collaborativeF.py` | performs item-related and user-related collaborative filtering |
 | `comment_injector.py` | takes the 'comments.csv' file and injects into our dataset the comments inside it|
 | `contentF.py` | performs content-based filtering |
+| `contentFAlt.py` | performs content-based filtering with the alternative definition of vector|
 | `corrcoef.py` | calculates, given a dataframe, the Pearson correlation coefficient between its columns |
 | `main.py` | launch file that runs the whole project and contains the data pre-processing and rating algorithm functions |
 | `modelEvaluator.py` | contains the function that evaluates the given recommender model |
