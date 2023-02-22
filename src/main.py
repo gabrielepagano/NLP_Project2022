@@ -138,7 +138,7 @@ def main():
     """
 
     # FOR DEBUG PURPOSES (cuts the data into smaller sets for faster debug computations)
-    DEBUG = 1
+    DEBUG = 0
 
     # Data preprocessing and preparation
 
